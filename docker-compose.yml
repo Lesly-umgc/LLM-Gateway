@@ -1,0 +1,66 @@
+# LNM Gateway — full stack: FastAPI gateway + Redis + Ollama.
+#
+#   docker compose up --build
+#
+# The ollama service pulls ${OLLAMA_MODEL:-llama3.2:3b} on first start (see
+# docker/ollama-entrypoint.sh); the model persists in the ollama-models volume.
+# Works on Apple Silicon (Docker Desktop) — ollama/ollama ships arm64 images.
+
+services:
+  gateway:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      LNM_API_KEYS: ${LNM_API_KEYS:-demo-key}
+      LNM_ADMIN_KEY: ${LNM_ADMIN_KEY:-admin-secret}
+      LNM_RATE_LIMIT_PER_MIN: ${LNM_RATE_LIMIT_PER_MIN:-60}
+      LNM_BACKEND: ollama
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      LNM_JUDGE_BACKEND: ollama
+      LNM_REDIS_URL: redis://redis:6379/0
+      LNM_AUDIT_PATH: /data/audit.jsonl
+      LNM_FAITHFULNESS_SAMPLE_RATE: ${LNM_FAITHFULNESS_SAMPLE_RATE:-0.20}
+    depends_on:
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    volumes:
+      - audit-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+      - ./docker/ollama-entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+volumes:
+  audit-data:
+  redis-data:
+  ollama-models:
