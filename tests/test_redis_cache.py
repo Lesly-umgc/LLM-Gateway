@@ -1,4 +1,8 @@
-"""RedisTokenCache tests — skipped when no Redis is reachable."""
+"""RedisTokenCache tests.
+
+Uses a real Redis when one is reachable (LNM_TEST_REDIS_URL), otherwise a
+fakeredis in-memory fake. Either way the cache logic gets exercised.
+"""
 
 import os
 import sys
@@ -14,16 +18,30 @@ from optimizer.redis_cache import RedisTokenCache  # noqa: E402
 URL = os.environ.get("LNM_TEST_REDIS_URL", "redis://localhost:6379/15")
 
 
-@pytest.fixture()
-def cache():
-    c = RedisTokenCache(URL, namespace="lnm:test")
+def _client():
     try:
-        c._r.ping()
+        c = redis.from_url(URL, socket_connect_timeout=1)
+        c.ping()
+        return c
     except Exception:
-        pytest.skip("no redis at %s" % URL)
-    c._r.flushdb()
+        fake = pytest.importorskip("fakeredis")
+        return fake.FakeRedis()
+
+
+@pytest.fixture()
+def cache(monkeypatch):
+    client = _client()
+    client.flushdb()
+
+    real_from_url = redis.from_url
+
+    def fake_from_url(url, **kw):
+        return client
+
+    monkeypatch.setattr(redis, "from_url", fake_from_url)
+    c = RedisTokenCache(URL, namespace="lnm:test")
     yield c
-    c._r.flushdb()
+    client.flushdb()
 
 
 def test_put_get_roundtrip(cache):
@@ -42,13 +60,11 @@ def test_miss_and_model_isolation(cache):
 
 def test_ttl_expiry(cache):
     c = RedisTokenCache(URL, ttl=1, namespace="lnm:test")
-    c._r.flushdb()
     c.put("quick", "m", "a", 2, 1)
     assert c.get("quick", "m") is not None
     import time
     time.sleep(1.2)
     assert c.get("quick", "m") is None
-    c._r.flushdb()
 
 
 def test_semantic_hit(cache):

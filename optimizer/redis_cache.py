@@ -43,7 +43,8 @@ class RedisTokenCache:
     """Drop-in replacement for TokenCache backed by Redis."""
 
     def __init__(self, url: str, ttl: int = _CACHE_TTL,
-                 sem_threshold: float = _SEM_THRESHOLD):
+                 sem_threshold: float = _SEM_THRESHOLD,
+                 namespace: str = "lnm"):
         try:
             import redis
         except ImportError as e:
@@ -53,6 +54,7 @@ class RedisTokenCache:
         self.url = url
         self.ttl = ttl
         self.sem_threshold = sem_threshold
+        self._ns = namespace
         self._r = redis.from_url(url, socket_connect_timeout=5,
                                  socket_timeout=10)
         self._r.ping()  # raise now if Redis is unreachable
@@ -67,13 +69,19 @@ class RedisTokenCache:
         import hashlib
         return hashlib.sha256(f"{model}::{_normalize(prompt)}".encode()).hexdigest()
 
+    def _ek(self, key: str) -> str:
+        return f"{self._ns}:exact:{key}"
+
+    def _bk(self, key: str) -> str:
+        return f"{self._ns}:emb:{key}"
+
     def _entry(self, key: str) -> CacheEntry | None:
-        raw = self._r.get(_EXACT_PREFIX + key)
+        raw = self._r.get(self._ek(key))
         if not raw:
             return None
         d = json.loads(raw)
         if time.time() - d["ts"] > self.ttl:
-            self._r.delete(_EXACT_PREFIX + key, _EMB_PREFIX + key)
+            self._r.delete(self._ek(key), self._bk(key))
             return None
         return CacheEntry(d["response"], d["prompt_tokens"],
                           d["completion_tokens"], d["ts"])
@@ -100,7 +108,7 @@ class RedisTokenCache:
             return None
         best, best_key = 0.0, None
         try:
-            for ek in self._r.scan_iter(_EMB_PREFIX + "*", count=200):
+            for ek in self._r.scan_iter(self._ns + ":emb:*", count=200):
                 ek = ek.decode() if isinstance(ek, bytes) else ek
                 emb_raw = self._r.get(ek)
                 if not emb_raw:
@@ -129,10 +137,10 @@ class RedisTokenCache:
             "response": response, "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens, "ts": time.time(),
         })
-        self._r.setex(_EXACT_PREFIX + key, self.ttl, payload)
+        self._r.setex(self._ek(key), self.ttl, payload)
         vec = _emb.encode(_normalize(prompt))
         if vec is not None:
-            self._r.setex(_EMB_PREFIX + key, self.ttl, json.dumps(vec))
+            self._r.setex(self._bk(key), self.ttl, json.dumps(vec))
 
     @property
     def semantic_available(self) -> bool:
@@ -140,7 +148,7 @@ class RedisTokenCache:
 
     def stats(self) -> dict:
         try:
-            entries = sum(1 for _ in self._r.scan_iter(_EXACT_PREFIX + "*",
+            entries = sum(1 for _ in self._r.scan_iter(self._ns + ":exact:*",
                                                       count=500))
         except Exception:
             entries = -1
