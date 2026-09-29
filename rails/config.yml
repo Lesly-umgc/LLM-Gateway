@@ -1,0 +1,50 @@
+# LNM Gateway — NeMo Guardrails configuration
+# This is the real, loadable guardrails config. The gateway's RailsEngine
+# (rails/engine.py) parses it to register the active rail set, and the
+# Colang flows in rails.co mirror the same logic for auditability.
+# The config parses with `nemoguardrails.RailsConfig.from_path(...)`.
+
+models: []
+
+rails:
+  input:
+    flows:
+      - prompt injection defense
+      - jailbreak defense
+      - pii input scan
+  output:
+    flows:
+      - pii redaction
+      - policy refusal
+      - hallucination flag
+
+# Rail definitions. Each rail declares its strategy; the engine implements:
+#   heuristic  -> rails/prefilter.py (deterministic, no LLM)
+#   llm_judge  -> rails/actions.py (Gemini-backed judge actions)
+#   pii        -> rails/pii.py (deterministic regex redaction)
+rails_config:
+  prompt injection defense:
+    strategy: heuristic_then_llm_judge
+    description: Block instruction overrides, role spoofing, obfuscated payloads.
+  jailbreak defense:
+    strategy: heuristic_then_llm_judge
+    description: Block DAN/mode-escalation/harmful-preface jailbreaks.
+  pii input scan:
+    strategy: pii
+    description: Detect PII in user input; flag for redaction downstream.
+  pii redaction:
+    strategy: pii
+    description: Redact emails, phones, SSNs, credit cards in model output.
+  policy refusal:
+    strategy: heuristic_then_llm_judge
+    description: Refuse disallowed content (weapons, malware, wrongdoing).
+  hallucination flag:
+    strategy: ragas_faithfulness
+    description: Sampled RAGAS faithfulness scoring on grounded traffic.
+
+# Deterministic thresholds — honored by the engine, no LLM involved.
+thresholds:
+  faithfulness_flag_below: 0.70
+  faithfulness_sample_rate: 0.20
+  semantic_cache_similarity: 0.95
+  semantic_cache_ttl_seconds: 3600
