@@ -1,0 +1,51 @@
+# LNM Gateway — production vLLM serving config (GPU deploy path)
+#
+# NOT EXECUTED in this environment (no GPU here). This is the documented
+# upgrade path from the Ollama demo backend: the gateway talks to vLLM over
+# its OpenAI-compatible API (see backends/vllm.py), so switching backends is
+# a config change — LNM_BACKEND=vllm plus VLLM_BASE_URL / VLLM_MODEL below.
+#
+# Quantization here is FP8 (W8A8): 8-bit weights and 8-bit activations, which
+# vLLM supports natively on Ada / Hopper GPUs. That roughly halves VRAM vs
+# FP16 for the same model; re-measure latency and quality after deploy —
+# no quality claims are made here because this config was never run.
+#
+# 1) Pick a pre-quantized FP8 model (no manual quantization step needed), e.g.
+#    neuralmagic/Meta-Llama-3-8B-Instruct-FP8. Or quantize your own with
+#    llmcompressor (example):
+#      pip install llmcompressor
+#      python - <<'EOF'
+#      from llmcompressor import oneshot
+#      from llmcompressor.modifiers.quantization import QuantizationModifier
+#      oneshot(model="meta-llama/Meta-Llama-3-8B-Instruct",
+#              dataset="open_platypus",
+#              recipe=QuantizationModifier(targets="Linear", scheme="FP8_DYNAMIC",
+#                                          ignore=["lm_head"]),
+#              output_dir="./llama3-8b-fp8")
+#      EOF
+#
+# 2) Serve with vLLM (docker, NVIDIA GPU required):
+#      docker run --gpus all -p 8000:8000 \
+#        -v ./llama3-8b-fp8:/model \
+#        vllm/vllm-openai:latest \
+#        --model /model --quantization fp8 \
+#        --max-model-len 8192 --gpu-memory-utilization 0.9
+
+vllm:
+  image: "vllm/vllm-openai:latest"
+  model_path: "./llama3-8b-fp8"   # FP8 (W8A8) quantized weights, see step 1
+  quantization: "fp8"
+  max_model_len: 8192
+  gpu_memory_utilization: 0.9
+  port: 8000
+
+gateway_env_for_vllm:
+  LNM_BACKEND: "vllm"
+  VLLM_BASE_URL: "http://localhost:8000/v1"
+  VLLM_MODEL: "llama3-8b-fp8"
+  # VLLM_API_KEY: ""   # uncomment if the vLLM server requires auth
+
+notes:
+  - "Pair with the gateway's semantic cache + prompt compression for the full"
+  - "cost-reduction story. The expenditure-reduction target in the project aim"
+  - "is a design target until measured; measure it on this path after deploy."
