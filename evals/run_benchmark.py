@@ -280,22 +280,28 @@ def run() -> dict:
         _post(client, para)
         lookups += 1
     m = client.get("/admin/metrics", headers=ADMIN_HEADERS).json()
-    saved_cache = m.get("tokens_saved_cache", 0)
-    saved_comp = m.get("tokens_saved_compression", 0)
-    tokens_in = m.get("tokens_in", 0)
-    tokens_out = m.get("tokens_out", 0)
+    cache_m = m.get("cache", {})
+    tok_m = m.get("tokens", {})
+    b_cache = hits_before.get("cache", {})
+    hits_exact = cache_m.get("hits_exact", 0) - b_cache.get("hits_exact", 0)
+    hits_sem = cache_m.get("hits_semantic", 0) - b_cache.get("hits_semantic", 0)
+    saved_cache = tok_m.get("saved_cache", 0)
+    saved_comp = tok_m.get("saved_compression", 0)
+    tokens_in = tok_m.get("in", 0)
+    tokens_out = tok_m.get("out", 0)
     total = tokens_in + tokens_out + saved_cache + saved_comp
     results["suites"]["token_optimization"] = {
         "repeat_lookups": lookups,
-        "cache_hits_exact": m.get("cache_hits_exact", 0),
-        "cache_hits_semantic": m.get("cache_hits_semantic", 0),
-        "cache_misses": m.get("cache_misses", 0),
+        "cache_hits_exact": hits_exact,
+        "cache_hits_semantic": hits_sem,
+        "cache_misses": (cache_m.get("misses", 0)
+                         - b_cache.get("misses", 0)),
         "tokens_in": tokens_in, "tokens_out": tokens_out,
         "tokens_saved_cache": saved_cache,
         "tokens_saved_compression": saved_comp,
         "tokens_saved_total": saved_cache + saved_comp,
         "savings_pct": (saved_cache + saved_comp) / total if total else 0,
-        "est_usd_saved": m.get("est_usd_saved", 0),
+        "est_usd_saved": m.get("est_cost_saved_usd", 0),
     }
 
     results["elapsed_seconds"] = round(time.time() - started, 1)
