@@ -26,9 +26,6 @@ _CACHE_TTL = int(os.environ.get("LNM_CACHE_TTL_SECONDS", "3600"))
 _SEM_THRESHOLD = float(os.environ.get("LNM_SEM_THRESHOLD", "0.95"))
 _MIN_SEM_TOKENS = 8
 
-_EXACT_PREFIX = "lnm:exact:"
-_EMB_PREFIX = "lnm:emb:"
-
 
 def _cosine(a: list[float], b: list[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
@@ -115,7 +112,7 @@ class RedisTokenCache:
                     continue
                 sim = _cosine(q, json.loads(emb_raw))
                 if sim > best:
-                    best, best_key = sim, ek[len(_EMB_PREFIX):]
+                    best, best_key = sim, ek[len(self._bk("")):]
         except Exception:
             self.misses += 1
             return None

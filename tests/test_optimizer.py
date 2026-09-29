@@ -36,12 +36,12 @@ def test_cache_ttl_expiry():
 
 def test_semantic_cache_near_duplicate():
     c = TokenCache(ttl=600)
-    long_prompt = ("Explain in detail how the transformer attention mechanism "
-                   "works in large language models")
-    c.put(long_prompt, "m", "attention answer", 40, 60)
-    # near-duplicate rephrasing
-    near = ("Explain in detail how attention works in transformers for large "
-            "language models")
+    # long enough to pass the semantic lookup's minimum-length guard,
+    # close enough (>= 0.95 cosine on MiniLM) to count as a near-duplicate
+    long_prompt = ("Explain how photosynthesis works in simple terms "
+                   "for a beginner")
+    c.put(long_prompt, "m", "photosynthesis answer", 40, 60)
+    near = "In simple terms for a beginner, how does photosynthesis work"
     hit = c.get(near, "m")
     if c.semantic_available:
         assert hit is not None, "semantic cache missed near-duplicate"

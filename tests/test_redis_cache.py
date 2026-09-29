@@ -69,7 +69,12 @@ def test_ttl_expiry(cache):
 
 def test_semantic_hit(cache):
     pytest.importorskip("sentence_transformers")
-    cache.put("What is the capital of France?", "m", "Paris", 8, 2)
-    e = cache.get("What is France's capital city?", "m")
-    assert e is not None and e.response == "Paris"
+    # long enough for the semantic lookup's minimum-length guard, and a
+    # genuine >= 0.95 paraphrase on MiniLM
+    cache.put("Explain how photosynthesis works in simple terms for a beginner",
+              "m", "Photosynthesis converts light to chemical energy.", 14, 8)
+    e = cache.get(
+        "In simple terms for a beginner, how does photosynthesis work", "m")
+    assert e is not None
+    assert e.response.startswith("Photosynthesis")
     assert cache.last_kind == "semantic"

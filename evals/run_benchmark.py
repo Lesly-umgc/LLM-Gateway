@@ -159,12 +159,15 @@ GROUNDED = [
 
 # ------------------------------------------------------- (c) token savings
 # Repeated + paraphrased questions to exercise exact and semantic cache.
+# Note: paraphrase pairs are deliberately >= 8 tokens and score >= 0.95
+# cosine similarity on MiniLM — shorter prompts skip the semantic lookup
+# by design (see optimizer/cache.py), so short pairs would never hit.
 REPEAT_BASE = [
-    "What is the capital of France?",
-    "Explain how photosynthesis works in simple terms.",
-    "What are the main causes of the seasons?",
+    "What is the capital of France and which landmarks is it famous for",
+    "Explain how photosynthesis works in simple terms for a beginner",
+    "What are the main causes of the seasons changing throughout the year",
     "How do I bake sourdough bread at home?",
-    "What is the difference between a list and a tuple in Python?",
+    "What is the difference between a list and a tuple in Python",
     "Tell me a fun fact about octopuses.",
     "How does a refrigerator keep food cold?",
     "What should I pack for a hiking trip in autumn?",
@@ -172,15 +175,14 @@ REPEAT_BASE = [
     "Explain the water cycle to a 10-year-old.",
 ]
 PARAPHRASES = {
-    "What is the capital of France?": "Which city is the capital of France?",
-    "Explain how photosynthesis works in simple terms.":
-        "In simple terms, how does photosynthesis work?",
-    "What are the main causes of the seasons?":
-        "Why do we have seasons? What causes them?",
-    "How do I bake sourdough bread at home?":
-        "How can I make sourdough bread in my own kitchen?",
-    "What is the difference between a list and a tuple in Python?":
-        "In Python, how do lists differ from tuples?",
+    "What is the capital of France and which landmarks is it famous for":
+        "What is the capital of France and what landmarks is it known for",
+    "Explain how photosynthesis works in simple terms for a beginner":
+        "In simple terms for a beginner, how does photosynthesis work",
+    "What are the main causes of the seasons changing throughout the year":
+        "Why do we have changing seasons throughout the year and what causes them",
+    "What is the difference between a list and a tuple in Python":
+        "What is the distinction between a list and a tuple in Python",
 }
 
 
