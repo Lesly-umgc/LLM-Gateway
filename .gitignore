@@ -1,0 +1,19 @@
+# python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# runtime data
+audit.jsonl
+*.jsonl
+.lnm/
+.tmp/
+
+# evals (results.json IS committed; raw per-run artifacts are not)
+evals/audit.jsonl
+
+# models / large binaries
+*.bin
+*.gguf
+*.safetensors

@@ -1,0 +1,15 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+tiktoken>=0.7
+pyyaml>=6.0
+redis>=5.0
+# NeMo Guardrails powers the rails/ configuration format (config.yml + rails.co).
+# The gateway's rail pipeline (heuristic prefilter + LLM judge + PII redaction)
+# implements the flows declared there; see docs/ARCHITECTURE.md.
+nemoguardrails>=0.24
+# Semantic cache embeddings (CPU-friendly MiniLM). Optional at runtime: the
+# cache degrades to exact-match if this is unavailable.
+sentence-transformers>=3.0
+torch --index-url https://download.pytorch.org/whl/cpu
+pytest>=8.0
