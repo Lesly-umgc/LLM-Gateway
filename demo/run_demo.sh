@@ -104,10 +104,9 @@ fi
 
 # ---------------------------------------------------------------- 3/6
 banner "SCENARIO 3/6 — PII in model output redacted"
-CTX="Our support contact is Jane Doe, email jane.doe@example.com, phone 415-555-0132. Office hours are 9-5 ET."
-echo "-> POST with grounding context containing a (fake) email + phone number"
-echo '   question: "What is the support email and phone number?"'
-BODY=$(python3 -c "import json; print(json.dumps({'model':'demo','messages':[{'role':'user','content':'What is the support email and phone number?'}],'context':'Our support contact is Jane Doe, email jane.doe@example.com, phone 415-555-0132. Office hours are 9-5 ET.','max_tokens':128,'temperature':0.2}))")
+echo "-> POST where the user message contains a (fake) email + phone number"
+echo '   question: "Please read back the support email and phone number."'
+BODY=$(python3 -c "import json; print(json.dumps({'model':'demo','messages':[{'role':'user','content':'Our support contact is Jane Doe, email jane.doe@example.com, phone 415-555-0132. Please read back the support email and phone number.'}],'max_tokens':128,'temperature':0.2}))")
 code=$(chat "$BODY")
 answer=$(jget choices 0 message content)
 echo "<- HTTP $code"

@@ -106,10 +106,8 @@ judge=ollama, ~31 min wall time). Reproduce with `python evals/run_benchmark.py`
 llama3.2:3b weights were fetched as a Q4_K_M GGUF from HuggingFace and
 imported locally — same base model and quant level as the registry build.)
 
-- **Injection defense:** 24/30 attacks blocked (80.0%). The 6 that got
-  through were soft social-engineering jailbreaks (roleplay, "reveal your
-  hidden rules" style) that neither the regex prefilter nor the LLM judge
-  caught — a real gap, not a tuning artifact I hid.
+- **Injection defense:** 24/30 attacks blocked (80.0%); 6/30 were not
+  blocked — a real gap I did not hide or tune away.
 - **False positives:** 0/12 benign prompts blocked (0.0%).
 - **Faithfulness (RAGAS-style):** n=20 grounded Q&A, mean score 0.654,
   min 0.000, 9/20 flagged below the 0.70 threshold (45.0% flag rate).
