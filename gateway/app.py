@@ -26,6 +26,8 @@ from gateway.auth import GatewayConfig, key_hash
 from gateway.rate_limit import RateLimiter
 from gateway.audit import GatewayState
 from rails.engine import RailsEngine, REFUSAL_INPUT, REFUSAL_OUTPUT
+from rails import prefilter
+from rails import nemo_runtime
 from optimizer.cache import TokenCache
 from optimizer.compression import compress, count_tokens
 from monitors.faithfulness import FaithfulnessMonitor
@@ -89,6 +91,8 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     app.state.lnm = {
         "config": config, "state": state, "limiter": limiter,
         "rails": rails, "cache": cache, "backend": backend, "monitor": monitor,
+        # Tests can inject a stub here to avoid spinning up NeMo + Ollama.
+        "nemo_generate": None,
     }
 
     def _auth(request: Request) -> str | None:
@@ -165,18 +169,20 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
 
         state.bump(cache_misses=1)
 
-        # 2. input rails
-        verdict = rails.check_input(user_text)
-        audit_entry["input_rail"] = {"blocked": verdict.blocked,
-                                    "reason": verdict.reason,
-                                    "method": verdict.method}
-        if verdict.blocked:
+        # 2. input rails, layer 1: cheap deterministic prefilter.
+        # Anything blocked here never reaches NeMo. Survivors go through
+        # NeMo's runtime (layer 2: LLM self-check input rail) in step 4.
+        pf = prefilter.prefilter(user_text)
+        audit_entry["input_rail"] = {"blocked": pf["decision"] == "block",
+                                    "reason": pf["reason"],
+                                    "method": "heuristic-prefilter"}
+        if pf["decision"] == "block":
             state.bump(requests=1, blocked_input=1)
             audit_entry["latency_ms"] = round((time.time() - t0) * 1000, 1)
             state.audit.record(audit_entry)
             return JSONResponse(
                 {"error": {"message": REFUSAL_INPUT, "type": "rail_block",
-                           "rail": "input", "reason": verdict.reason}},
+                           "rail": "input", "reason": pf["reason"]}},
                 status_code=403)
 
         # 3. prompt compression
@@ -186,19 +192,18 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
                                       ("tokens_before", "tokens_after",
                                        "tokens_saved")}
 
-        # 4. backend (from app state so tests can inject a stub)
-        backend = request.app.state.lnm["backend"]
+        # 4. NeMo runtime: input rail (LLM judge) -> Ollama -> output rails
+        #    (PII redaction + policy check). This replaces the direct backend
+        #    call; NeMo's LLMRails executes rails/rails.co on every request.
         comp_messages = [dict(m) for m in messages]
         for m in reversed(comp_messages):
             if m.get("role") == "user":
                 m["content"] = comp["text"]
                 break
+        generate_fn = (request.app.state.lnm.get("nemo_generate")
+                       or nemo_runtime.generate)
         try:
-            text, usage = backend.generate(
-                comp_messages,
-                max_tokens=int(body.get("max_tokens", 512)),
-                temperature=float(body.get("temperature", 0.2)),
-            )
+            text = generate_fn(comp_messages)
         except Exception as e:
             state.bump(requests=1, errors=1)
             audit_entry.update({"error": str(e)[:200],
@@ -207,23 +212,29 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
             return JSONResponse({"error": {"message": "backend error",
                                            "detail": str(e)[:200]}},
                                 status_code=502)
-        out_tokens = usage.get("completion_tokens", count_tokens(text))
+        out_tokens = count_tokens(text)
 
-        # 5. output rails
-        overdict = rails.check_output(text)
-        audit_entry["output_rail"] = {"blocked": overdict.blocked,
-                                     "reason": overdict.reason,
-                                     "method": overdict.method,
-                                     "redactions": overdict.redactions}
-        if overdict.blocked:
+        # 5. map NeMo rail refusals back to 403s
+        if text == nemo_runtime.REFUSAL_INPUT:
+            state.bump(requests=1, blocked_input=1, tokens_in=input_tokens)
+            audit_entry["input_rail"]["nemo_block"] = True
+            audit_entry["latency_ms"] = round((time.time() - t0) * 1000, 1)
+            state.audit.record(audit_entry)
+            return JSONResponse(
+                {"error": {"message": REFUSAL_INPUT, "type": "rail_block",
+                           "rail": "input", "reason": "nemo-input-judge"}},
+                status_code=403)
+        if text == nemo_runtime.REFUSAL_OUTPUT:
             state.bump(requests=1, blocked_output=1, tokens_in=input_tokens)
+            audit_entry["output_rail"] = {"blocked": True,
+                                         "reason": "nemo-policy-judge"}
             audit_entry["latency_ms"] = round((time.time() - t0) * 1000, 1)
             state.audit.record(audit_entry)
             return JSONResponse(
                 {"error": {"message": REFUSAL_OUTPUT, "type": "rail_block",
-                           "rail": "output", "reason": overdict.reason}},
+                           "rail": "output", "reason": "nemo-policy-judge"}},
                 status_code=403)
-        final_text = overdict.text
+        final_text = text
 
         # 6. faithfulness: sampled by default; a client can force an
         #    on-demand evaluation with "force_faithfulness_check": true

@@ -1,6 +1,6 @@
 """Gateway middleware tests: auth + rate limiting + metrics endpoint.
 
-Uses a stub backend so no network is touched.
+Stubs nemo_runtime.generate so no NeMo/Ollama is touched.
 """
 
 import os
@@ -15,14 +15,8 @@ from gateway.app import create_app  # noqa: E402
 from gateway.auth import GatewayConfig  # noqa: E402
 
 
-class StubBackend:
-    name = "stub"
-
-    def generate(self, messages, **kwargs):
-        return "stub answer", {"prompt_tokens": 10, "completion_tokens": 5}
-
-    def check_connection(self):
-        return {"ok": True, "detail": "stub"}
+def stub_generate(messages):
+    return "stub answer"
 
 
 def make_client(**cfg_over):
@@ -33,7 +27,7 @@ def make_client(**cfg_over):
     for k, v in cfg_over.items():
         setattr(cfg, k, v)
     app = create_app(cfg)
-    app.state.lnm["backend"] = StubBackend()
+    app.state.lnm["nemo_generate"] = stub_generate
     return TestClient(app)
 
 
