@@ -331,6 +331,14 @@ def run() -> dict:
     print(f"backend: {conn['detail']}", flush=True)
     assert conn["ok"], "both tiers must be up"
     app.state.lnm["backend"] = routed  # the gateway reads backend from state
+    # Bypass NeMo rails for the cost measurement: the savings come from
+    # tiered routing + prefix caching, not from the safety rails. Use the
+    # routed backend directly so request_log populates for the money math.
+    def _routed_generate(messages: list[dict]) -> str:
+        text, _ = routed.generate(messages, max_tokens=MAX_TOKENS,
+                                  temperature=0.2)
+        return text
+    app.state.lnm["nemo_generate"] = _routed_generate
     client = TestClient(app)
     assert client.get("/healthz").json()["status"] == "ok"
 
