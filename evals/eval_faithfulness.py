@@ -82,15 +82,22 @@ def prime_judge():
     # On small-RAM machines the 8B weights only fit via mmap; a plain load
     # gets OOM-killed, so warm it through the native API with mmap forced.
     # Once loaded, the ragas judge calls below reuse the running instance.
+    # stream=true so headers arrive immediately; a blocking (stream=false)
+    # call would sit headerless through the multi-minute mmap load and hit
+    # the client timeout.
     req = urllib.request.Request(
         OLLAMA_BASE_URL + "/api/generate",
         data=json.dumps({"model": JUDGE_MODEL, "prompt": "ok",
-                         "stream": False, "keep_alive": "60m",
+                         "stream": True, "keep_alive": "60m",
                          "options": {"use_mmap": True, "num_ctx": 2048}}
                         ).encode(),
         headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=600) as r:
-        json.load(r)
+    with urllib.request.urlopen(req, timeout=900) as r:
+        for line in r:
+            if not line.strip():
+                continue
+            if json.loads(line).get("done"):
+                break
     print(f"judge {JUDGE_MODEL} warmed (mmap, keep_alive 60m)", flush=True)
 
 
