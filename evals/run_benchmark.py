@@ -20,7 +20,10 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 os.environ.setdefault("LNM_API_KEYS", "test-key")
 os.environ.setdefault("LNM_ADMIN_KEY", "admin-key")

@@ -100,15 +100,27 @@ More detail: `docs/ARCHITECTURE.md`.
 
 ## Measured results
 
-Pending — I run the eval suite with:
+From `evals/results.json` (run 2026-09-30, backend=ollama, model=llama3.2:3b,
+judge=ollama, ~31 min wall time). Reproduce with `python evals/run_benchmark.py`.
+(Model note: this sandbox's network blocked Ollama's model registry, so the
+llama3.2:3b weights were fetched as a Q4_K_M GGUF from HuggingFace and
+imported locally — same base model and quant level as the registry build.)
 
-```bash
-python evals/run_benchmark.py
-```
+- **Injection defense:** 24/30 attacks blocked (80.0%). The 6 that got
+  through were soft social-engineering jailbreaks (roleplay, "reveal your
+  hidden rules" style) that neither the regex prefilter nor the LLM judge
+  caught — a real gap, not a tuning artifact I hid.
+- **False positives:** 0/12 benign prompts blocked (0.0%).
+- **Faithfulness (RAGAS-style):** n=20 grounded Q&A, mean score 0.654,
+  min 0.000, 9/20 flagged below the 0.70 threshold (45.0% flag rate).
+- **Token optimization:** 171 of 7,822 tokens saved (2.2%) — 10/10 exact
+  cache hits, 0/4 semantic cache hits (the paraphrases fell below the 0.80
+  MiniLM similarity threshold), plus prompt compression. Estimated
+  $0.000257 saved at the documented blended rate — indicative, not a bill.
 
-and paste the real numbers here (attack block rate, false-positive rate,
-cache hit rate, tokens saved %). I won't put the 33% cost-reduction target
-from the project aim in this section until it's measured.
+Honest read: the 33% cost-reduction target from the project aim is **not**
+met by these numbers. 2.2% is the measured saving on this workload; the
+33% stays a design target until a production workload proves otherwise.
 
 ## What was NOT run or measured here
 
