@@ -80,25 +80,28 @@ def _get_scorer():
     return _scorer
 
 
+def _statement_counts(res) -> tuple[int | None, int | None]:
+    try:
+        statements = res.traces["output"].statements
+        claims = len(statements)
+        supported = sum(1 for s in statements if s.verdict)
+        return claims, supported
+    except Exception:
+        return None, None
+
+
 def _ragas_score(answer: str, context: str, question: str) -> dict:
-    # ragas requires a user_input (it guides statement extraction, e.g.
-    # resolving pronouns). The gateway doesn't pass the question, so fall
-    # back to a neutral prompt instead of dropping to the heuristic.
-    res = _get_scorer().score(
-        user_input=question or "What factual claims does the answer make?",
-        response=answer,
-        retrieved_contexts=[context],
-    )
+    res = _get_scorer().score(user_input=question, response=answer,
+                              retrieved_contexts=[context])
     score = float(res.value)
     if score != score:  # NaN: ragas found no verifiable statements
         return {"score": 1.0, "claims": 0, "supported": 0, "flagged": False,
                 "judge": "ragas", "note": "no factual claims"}
-    # this ragas version returns only the float; statement counts aren't
-    # exposed on the result, so leave them null rather than inventing them
+    claims, supported = _statement_counts(res)
     return {
         "score": score,
-        "claims": None,
-        "supported": None,
+        "claims": claims,
+        "supported": supported,
         "flagged": score < THRESHOLD,
         "judge": "ragas",
     }
