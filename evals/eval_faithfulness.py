@@ -95,12 +95,35 @@ def prime_judge():
 
 
 def score_answers(answers: list) -> dict:
-    """Phase 2: ragas faithfulness on the cached answers (8B judge)."""
+    """Phase 2: ragas faithfulness on the cached answers (8B judge).
+
+    Resumable: each scored sample is flushed to RESULTS_PATH, and samples
+    already present there are skipped on a rerun.
+    """
     started = time.time()
     prime_judge()
 
+    done = {}
+    if os.path.exists(RESULTS_PATH):
+        try:
+            with open(RESULTS_PATH) as f:
+                for d in json.load(f).get("detail", []):
+                    done[d["question"]] = d
+        except (json.JSONDecodeError, KeyError):
+            pass
+
     scores, flagged, detail, judges = [], 0, [], {}
     for i, item in enumerate(answers, 1):
+        key = item["question"][:60]
+        if key in done:
+            d = done[key]
+            scores.append(d["score"])
+            flagged += 1 if d["flagged"] else 0
+            judges[d["judge"]] = judges.get(d["judge"], 0) + 1
+            detail.append(d)
+            print(f"[{i:2d}/{len(answers)}] cached score={d['score']:.3f}"
+                  f" :: {item['question'][:50]}", flush=True)
+            continue
         t0 = time.time()
         s = fm.faithfulness_score(item["answer"], item["context"],
                                   question=item["question"])
@@ -108,14 +131,16 @@ def score_answers(answers: list) -> dict:
         judges[s["judge"]] = judges.get(s["judge"], 0) + 1
         scores.append(s["score"])
         flagged += 1 if s["flagged"] else 0
-        detail.append({"question": item["question"][:60],
-                       "score": round(s["score"], 3),
-                       "claims": s["claims"], "supported": s["supported"],
-                       "flagged": s["flagged"], "judge": s["judge"],
-                       "score_seconds": round(dt, 1)})
+        d = {"question": key,
+             "score": round(s["score"], 3),
+             "claims": s["claims"], "supported": s["supported"],
+             "flagged": s["flagged"], "judge": s["judge"],
+             "score_seconds": round(dt, 1)}
+        detail.append(d)
         print(f"[{i:2d}/{len(answers)}] score={s['score']:.3f}"
               f" judge={s['judge']} {dt:5.0f}s"
               f" :: {item['question'][:50]}", flush=True)
+        _write_partial(detail, started)
 
     results = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -134,6 +159,27 @@ def score_answers(answers: list) -> dict:
     with open(RESULTS_PATH, "w") as f:
         json.dump(results, f, indent=2)
     return results
+
+
+def _write_partial(detail: list, started: float):
+    flagged = sum(1 for d in detail if d["flagged"])
+    judges: dict = {}
+    for d in detail:
+        judges[d["judge"]] = judges.get(d["judge"], 0) + 1
+    scores = [d["score"] for d in detail]
+    partial = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "judge": "ragas",
+        "judge_model": JUDGE_MODEL,
+        "n": len(scores),
+        "partial": True,
+        "flagged": flagged,
+        "judges_used": judges,
+        "elapsed_seconds": round(time.time() - started, 1),
+        "detail": detail,
+    }
+    with open(RESULTS_PATH, "w") as f:
+        json.dump(partial, f, indent=2)
 
 
 def load_cached_answers() -> list | None:
