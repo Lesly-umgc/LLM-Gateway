@@ -8,6 +8,11 @@ redis>=5.0
 # The gateway's rail pipeline (heuristic prefilter + LLM judge + PII redaction)
 # implements the flows declared there; see docs/ARCHITECTURE.md.
 nemoguardrails>=0.24
+# Real RAGAS faithfulness metric for the hallucination monitor. The judge LLM
+# is local Ollama, reached through ragas' llm_factory over Ollama's
+# OpenAI-compatible API — no API keys needed. Judge model defaults to
+# llama3.1:8b (`ollama pull llama3.1:8b`).
+ragas>=0.4
 # Semantic cache embeddings (CPU-friendly MiniLM). Optional at runtime: the
 # cache degrades to exact-match if this is unavailable.
 sentence-transformers>=3.0

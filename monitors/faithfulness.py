@@ -1,17 +1,19 @@
-"""Hallucination monitor: RAGAS-style faithfulness scoring on sampled traffic.
+"""Hallucination monitor: real RAGAS faithfulness scoring on sampled traffic.
 
-RAGAS faithfulness protocol (judge via common.llm, which defaults to Ollama):
-  1. Extract atomic claims from the answer.
-  2. For each claim, judge whether it is supported by the provided context.
-  3. faithfulness = supported_claims / total_claims.
+Scoring uses the `ragas` package (metrics.collections.Faithfulness) with an
+Ollama model as the judge, reached through ragas' llm_factory over Ollama's
+OpenAI-compatible API. The monitor samples a subset of grounded requests and
+scores them on an in-process worker queue, so judging never blocks responses.
 
-The monitor is sampled (default 20%) so judging costs stay bounded; it runs
-async via an in-process worker queue. Low-faithfulness responses (< threshold)
-are flagged into the audit log and metrics counters.
+Env:
+  LNM_FAITHFULNESS_SAMPLE_RATE  default 0.20
+  LNM_FAITHFULNESS_THRESHOLD    default 0.70
+  LNM_JUDGE_MODEL               default llama3.1:8b (needs `ollama pull`)
+  OLLAMA_BASE_URL               default http://localhost:11434
 
-If the judge LLM is unreachable, scoring falls back to a deterministic
-heuristic (sentence-split claims, content-word overlap) instead of failing
-silently — the result carries "judge": "heuristic" so evals can tell.
+If the judge is unreachable, scoring falls back to a deterministic heuristic
+(sentence-split claims, content-word overlap) and the result carries
+"judge": "heuristic" so callers can tell it apart from "ragas".
 """
 
 from __future__ import annotations
@@ -20,8 +22,6 @@ import os
 import queue
 import re
 import threading
-
-from common import llm as judge_llm
 
 SAMPLE_RATE = float(os.environ.get("LNM_FAITHFULNESS_SAMPLE_RATE", "0.20"))
 THRESHOLD = float(os.environ.get("LNM_FAITHFULNESS_THRESHOLD", "0.70"))
@@ -35,44 +35,76 @@ there here from into over under between through during before after about above
 below up down out off again further once more most other some any each few more
 most own same too very just don also than then once""".split())
 
-_CLAIM_PROMPT = """Break the ANSWER below into atomic factual claims, one per line.
-Each claim must be a single verifiable statement. Do not add claims that are not in the answer.
-If the answer has no factual claims (e.g. a greeting), output exactly: NO_CLAIMS
 
-ANSWER:
----
-{answer}
----
-Claims (one per line):"""
+def _ensure_ragas_importable():
+    # ragas 0.4.3 still does `from langchain_community.chat_models.vertexai
+    # import ChatVertexAI`, but langchain-community>=0.4 moved VertexAI into
+    # its own partner package. The classes are only used for isinstance
+    # checks, so stub them instead of pinning old langchain versions.
+    import sys
+    import types
 
-_VERIFY_PROMPT = """You are a fact-checker. Given the CONTEXT and a single CLAIM, answer with exactly
-one word: SUPPORTED if the claim is directly supported by the context, CONTRADICTED if the
-context contradicts it, otherwise UNSUPPORTED.
+    for mod_name, cls_name in (
+        ("langchain_community.chat_models.vertexai", "ChatVertexAI"),
+        ("langchain_community.llms.vertexai", "VertexAI"),
+    ):
+        try:
+            __import__(mod_name)
+        except ImportError:
+            stub = types.ModuleType(mod_name)
+            setattr(stub, cls_name, type(cls_name, (), {}))
+            sys.modules[mod_name] = stub
 
-CONTEXT:
----
-{context}
----
-CLAIM: {claim}
-Verdict:"""
+
+_scorer = None
+_scorer_lock = threading.Lock()
 
 
-def extract_claims(answer: str) -> tuple[list[str], str]:
-    """Returns (claims, judge) where judge is "llm" or "heuristic"."""
+def _get_scorer():
+    global _scorer
+    if _scorer is None:
+        with _scorer_lock:
+            if _scorer is None:
+                _ensure_ragas_importable()
+                from openai import AsyncOpenAI
+
+                from ragas.llms import llm_factory
+                from ragas.metrics.collections import Faithfulness
+
+                base_url = os.environ.get(
+                    "OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+                model = os.environ.get("LNM_JUDGE_MODEL", "llama3.1:8b")
+                client = AsyncOpenAI(base_url=base_url + "/v1",
+                                    api_key="ollama")
+                _scorer = Faithfulness(llm=llm_factory(model, client=client))
+    return _scorer
+
+
+def _statement_counts(res) -> tuple[int | None, int | None]:
     try:
-        text = judge_llm.generate(
-            _CLAIM_PROMPT.format(answer=answer[:4000]),
-            max_output_tokens=512, temperature=0.0,
-        )[0]
-        text = text.strip()
-        if not text or text.upper().startswith("NO_CLAIMS"):
-            return [], "llm"
-        claims = [c.strip("-•* ").strip() for c in text.splitlines()]
-        return [c for c in claims if c and len(c) > 8], "llm"
+        statements = res.traces["output"].statements
+        claims = len(statements)
+        supported = sum(1 for s in statements if s.verdict)
+        return claims, supported
     except Exception:
-        # judge down: fall back to naive sentence splitting
-        parts = re.split(r"(?<=[.!?])\s+", answer.strip())
-        return [p.strip() for p in parts if len(p.split()) >= 4], "heuristic"
+        return None, None
+
+
+def _ragas_score(answer: str, context: str, question: str) -> dict:
+    res = _get_scorer().score(user_input=question, response=answer,
+                              retrieved_contexts=[context])
+    score = float(res.value)
+    if score != score:  # NaN: ragas found no verifiable statements
+        return {"score": 1.0, "claims": 0, "supported": 0, "flagged": False,
+                "judge": "ragas", "note": "no factual claims"}
+    claims, supported = _statement_counts(res)
+    return {
+        "score": score,
+        "claims": claims,
+        "supported": supported,
+        "flagged": score < THRESHOLD,
+        "judge": "ragas",
+    }
 
 
 def _content_words(text: str) -> set[str]:
@@ -80,41 +112,38 @@ def _content_words(text: str) -> set[str]:
             if w not in _STOPWORDS}
 
 
-def _overlap_supported(claim: str, context: str) -> bool:
-    # FIXME: crude word-overlap heuristic — fine as a degraded fallback, but a
-    # real eval run should use the LLM judge (see "judge" in the result dict).
-    words = _content_words(claim)
-    if not words:
-        return False
-    ctx = _content_words(context)
-    return len(words & ctx) / len(words) >= 0.5
-
-
-def verify_claim(claim: str, context: str) -> bool:
-    try:
-        verdict = judge_llm.classify(
-            _VERIFY_PROMPT.format(claim=claim[:800], context=context[:6000])
-        )
-        return verdict.strip().upper().startswith("SUPPORTED")
-    except Exception:
-        return _overlap_supported(claim, context)
-
-
-def faithfulness_score(answer: str, context: str) -> dict:
-    """Synchronous full RAGAS-style faithfulness evaluation."""
-    claims, judge = extract_claims(answer)
+def _heuristic_score(answer: str, context: str) -> dict:
+    # Degraded fallback when the judge LLM is unreachable: split the answer
+    # into sentences and count a claim supported when at least half of its
+    # content words appear in the context. Crude, but deterministic and fast.
+    claims = [p.strip() for p in re.split(r"(?<=[.!?])\s+", answer.strip())
+              if len(p.split()) >= 4]
     if not claims:
         return {"score": 1.0, "claims": 0, "supported": 0, "flagged": False,
-                "judge": judge, "note": "no factual claims"}
-    supported = sum(1 for c in claims if verify_claim(c, context))
-    score = supported / len(claims)
+                "judge": "heuristic", "note": "no factual claims"}
+    ctx_words = _content_words(context)
+
+    def supported(claim: str) -> bool:
+        words = _content_words(claim)
+        return bool(words) and len(words & ctx_words) / len(words) >= 0.5
+
+    n_supported = sum(1 for c in claims if supported(c))
+    score = n_supported / len(claims)
     return {
         "score": score,
         "claims": len(claims),
-        "supported": supported,
+        "supported": n_supported,
         "flagged": score < THRESHOLD,
-        "judge": judge,
+        "judge": "heuristic",
     }
+
+
+def faithfulness_score(answer: str, context: str, question: str = "") -> dict:
+    """Synchronous RAGAS faithfulness evaluation (real `ragas` metric)."""
+    try:
+        return _ragas_score(answer, context, question)
+    except Exception:
+        return _heuristic_score(answer, context)
 
 
 class FaithfulnessMonitor:
@@ -136,19 +165,21 @@ class FaithfulnessMonitor:
         self._lock = threading.Lock()
 
     def maybe_check(self, *, request_id: str, answer: str, context: str,
-                    force: bool = False) -> None:
+                    question: str = "", force: bool = False) -> None:
         import random
         if not context:
             return
         if not force and random.random() >= self.sample_rate:
             return
-        self._q.put({"request_id": request_id, "answer": answer, "context": context})
+        self._q.put({"request_id": request_id, "answer": answer,
+                      "context": context, "question": question})
 
     def _worker(self):
         while True:
             job = self._q.get()
             try:
-                res = faithfulness_score(job["answer"], job["context"])
+                res = faithfulness_score(job["answer"], job["context"],
+                                         job.get("question", ""))
                 with self._lock:
                     self.scored += 1
                     self.scores.append(res["score"])
