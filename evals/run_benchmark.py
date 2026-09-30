@@ -255,12 +255,12 @@ def run() -> dict:
                               "score": None})
             continue
         answer = res["payload"]["choices"][0]["message"]["content"]
-        s = fm.faithfulness_score(answer, ctx)
+        s = fm.faithfulness_score(answer, ctx, question=q)
         scores.append(s["score"])
         flagged += 1 if s["flagged"] else 0
         fh_detail.append({"question": q[:60], "score": round(s["score"], 3),
                           "claims": s["claims"], "supported": s["supported"],
-                          "flagged": s["flagged"]})
+                          "flagged": s["flagged"], "judge": s["judge"]})
     results["suites"]["faithfulness"] = {
         "n": len(scores),
         "mean_score": sum(scores) / len(scores) if scores else None,
