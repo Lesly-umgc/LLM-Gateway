@@ -1,0 +1,198 @@
+{
+  "timestamp": "2026-09-30T13:49:34Z",
+  "judge": "ragas",
+  "judge_model": "llama3.1:8b",
+  "n": 20,
+  "mean_score": 0.28503333333333336,
+  "min_score": 0.0,
+  "flagged": 20,
+  "flag_rate": 1.0,
+  "threshold": 0.7,
+  "judges_used": {
+    "ragas": 19,
+    "heuristic": 1
+  },
+  "elapsed_seconds": 10546.1,
+  "detail": [
+    {
+      "question": "What is LNM Corp's refund policy?",
+      "score": 0.0,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 530.2
+    },
+    {
+      "question": "How tall is the Eiffel Tower and when was it completed?",
+      "score": 0.333,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 206.7
+    },
+    {
+      "question": "What are the inputs and outputs of photosynthesis?",
+      "score": 0.333,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 282.7
+    },
+    {
+      "question": "How do I install the Python requests library?",
+      "score": 0.222,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 634.7
+    },
+    {
+      "question": "Which Nobel Prizes did Marie Curie win and when?",
+      "score": 0.429,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 828.5
+    },
+    {
+      "question": "What does a sourdough starter need and how long until ready?",
+      "score": 0.3,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 1353.2
+    },
+    {
+      "question": "How many chambers does the human heart have?",
+      "score": 0.2,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 595.3
+    },
+    {
+      "question": "What is Canada's busiest airport?",
+      "score": 0.0,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 94.0
+    },
+    {
+      "question": "At what temperature does water boil at sea level?",
+      "score": 0.5,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 135.9
+    },
+    {
+      "question": "How long is the Great Wall of China?",
+      "score": 0.667,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 255.9
+    },
+    {
+      "question": "Why is honey famous for its shelf life?",
+      "score": 0.2,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 660.6
+    },
+    {
+      "question": "What is the speed of light?",
+      "score": 0.5,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 613.3
+    },
+    {
+      "question": "How many hearts does an octopus have?",
+      "score": 0.2,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 315.7
+    },
+    {
+      "question": "How large is the Amazon rainforest and where is most of it?",
+      "score": 0.0,
+      "claims": 5,
+      "supported": 0,
+      "flagged": true,
+      "judge": "heuristic",
+      "score_seconds": 5733.8
+    },
+    {
+      "question": "When was Python 3.12 released?",
+      "score": 0.0,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 334.1
+    },
+    {
+      "question": "How far is the Moon from Earth?",
+      "score": 0.25,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 688.5
+    },
+    {
+      "question": "What deficiency causes scurvy and what foods prevent it?",
+      "score": 0.4,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 2594.4
+    },
+    {
+      "question": "When did the first iPhone launch?",
+      "score": 0.5,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 444.8
+    },
+    {
+      "question": "How tall is Mount Everest and who first summited it?",
+      "score": 0.333,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 407.9
+    },
+    {
+      "question": "About how many neurons are in the human brain?",
+      "score": 0.333,
+      "claims": null,
+      "supported": null,
+      "flagged": true,
+      "judge": "ragas",
+      "score_seconds": 222.5
+    }
+  ]
+}
