@@ -16,6 +16,9 @@ ragas>=0.4
 # Semantic cache embeddings (CPU-friendly MiniLM). Optional at runtime: the
 # cache degrades to exact-match if this is unavailable.
 sentence-transformers>=3.0
+# LangChain Ollama adapter — the LLM behind NeMo's real runtime
+# (rails/nemo_runtime.py wraps ChatOllama for LLMRails).
+langchain-ollama>=0.2
 torch --index-url https://download.pytorch.org/whl/cpu
 pytest>=8.0
 # test-only: in-memory Redis fake so cache tests run without a Redis server
