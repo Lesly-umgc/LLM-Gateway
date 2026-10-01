@@ -64,6 +64,8 @@ curl -s localhost:8000/v1/chat/completions \
 
 ## Replay the demo
 
+Demo video (29s, recorded live, no narration): [demo/llm-security-gateway-demo.mp4](demo/llm-security-gateway-demo.mp4)
+
 `demo/run_demo.sh` runs the exact 6 scenarios from the demo video, in order,
 against a local gateway and prints a verdict for each:
 
