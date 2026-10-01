@@ -1,7 +1,6 @@
-"""Gemini backend — the real, working demo backend (free tier).
+"""Gemini backend — free-tier Google AI Studio backend.
 
-Auth goes through the common Gemini client (surrogate credential; the raw key
-is never handled by this process).
+Auth: GEMINI_API_KEY env var (see common/gemini.py).
 """
 
 from __future__ import annotations

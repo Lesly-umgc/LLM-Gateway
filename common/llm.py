@@ -2,10 +2,10 @@
 
 Routing (env LNM_JUDGE_BACKEND, default "ollama"):
   - "ollama": local Ollama model — no external calls, no extra credentials.
-  - "gemini": the free-tier Gemini connector (custom.google-gemini).
+  - "gemini": free-tier Gemini via the GEMINI_API_KEY env var.
   - "auto"  : try Ollama, fall back to Gemini if unreachable.
 
-The raw Gemini credential is never read; see common/gemini.py.
+See common/gemini.py for auth details.
 """
 
 from __future__ import annotations

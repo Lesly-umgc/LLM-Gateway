@@ -1,44 +1,31 @@
-"""Shared Gemini (free-tier) client used by rails actions, monitors, and the demo backend.
+"""Shared Gemini client used by rails actions, monitors, and the demo backend.
 
-Auth: the raw key is never read by this process. We pass a surrogate through the
-egress proxy via dynamic_credentials (connector id ``custom.google-gemini``);
-the proxy swaps in the real credential. Only generativelanguage.googleapis.com
-is ever contacted.
+Auth: plain Google AI Studio key from the GEMINI_API_KEY environment
+variable (https://aistudio.google.com/apikey, free tier). Nothing
+Hatch-specific here; the module works anywhere the key is set.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 import urllib.request
 import urllib.error
-
-sys.path.insert(0, "/opt/hatch/skills/skill-creator/bin")
-from dynamic_credentials import (  # noqa: E402
-    url_with_surrogate_query_param,
-    read_json_response,
-    DynamicCredentialError,
-)
 
 HOST = "generativelanguage.googleapis.com"
 BASE = f"https://{HOST}/v1beta"
 DEFAULT_MODEL = os.environ.get("LNM_GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 
-def _url(model: str) -> str:
-    try:
-        return url_with_surrogate_query_param(
-            f"{BASE}/models/{model}:generateContent",
-            "custom.google-gemini",
-            allowed_hosts=[HOST],
-        )
-    except DynamicCredentialError as e:  # pragma: no cover - env without connector
+def _key() -> str:
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not key:
         raise RuntimeError(
-            "Gemini connector 'custom.google-gemini' unavailable; "
-            "LNM demo backend requires it. " + str(e)
-        ) from e
+            "GEMINI_API_KEY is not set. Get a free key at "
+            "https://aistudio.google.com/apikey and export GEMINI_API_KEY."
+        )
+    return key
 
 
 def generate(
@@ -50,6 +37,7 @@ def generate(
     retries: int = 4,
 ) -> tuple[str, dict]:
     """Generate text. Returns (text, usage_dict). Retries with backoff on 429/5xx."""
+    url = f"{BASE}/models/{model}:generateContent"
     body = json.dumps(
         {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -64,12 +52,16 @@ def generate(
     for attempt in range(retries):
         try:
             req = urllib.request.Request(
-                _url(model),
+                url,
                 data=body,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": _key(),
+                },
                 method="POST",
             )
-            data = read_json_response(urllib.request.urlopen(req, timeout=90))
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                data = json.loads(resp.read().decode())
             cand = data["candidates"][0]
             text = "".join(
                 part.get("text", "") for part in cand["content"].get("parts", [])
