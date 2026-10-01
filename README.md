@@ -21,12 +21,22 @@ This is the easiest way. It starts the gateway, Redis (shared semantic
 cache), and Ollama (local model server) together:
 
 ```bash
+git clone https://github.com/Lesly-umgc/LLM-Gateway.git
+cd LLM-Gateway
 docker compose up --build
+```
+
+Wait until all three containers report healthy (the gateway logs
+`Uvicorn running on http://0.0.0.0:8000`). Then, in a second terminal:
+
+```bash
+curl localhost:8000/healthz
 ./demo/run_demo.sh
 ```
 
 The first start pulls `llama3.2:3b` (~2 GB) into a Docker volume; later
 starts reuse it. On Apple Silicon this works as-is under Docker Desktop.
+Everything runs locally — no API keys or accounts needed.
 
 ## Quickstart (native, no Docker)
 
@@ -72,6 +82,32 @@ docker compose up --build
 Exact model wording can vary slightly run to run (sampling), but the
 verdicts — blocked / redacted / cached / flagged — are deterministic. The
 script exits non-zero if any scenario misbehaves.
+
+## Talk to it yourself
+
+The gateway is a live OpenAI-compatible API; the demo is just scripted
+calls to it. Send your own prompts any time the stack is up:
+
+```bash
+curl -s localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer demo-key" -H "Content-Type: application/json" \
+  -d '{"model":"demo","messages":[{"role":"user","content":"Explain caching in one sentence."}],"max_tokens":256}' \
+  | python3 -m json.tool
+```
+
+The answer is under `choices[0].message.content`. `demo-key` is the default
+client key (change it via `LNM_API_KEYS` in `docker-compose.yml`).
+
+Things worth trying, each shows a different gateway feature:
+
+- an injection attempt (`Ignore all previous instructions...`) — blocked
+  with 403 before the model ever sees it;
+- the same question twice — the second comes back with `"cached": true`
+  and no backend call;
+- a message containing an email address — redacted in the reply as
+  `[REDACTED:EMAIL]`;
+- `GET /admin/metrics` with `-H "Authorization: Bearer admin-secret"` —
+  live counters for requests, blocks, cache hits, and tokens saved.
 
 ## How the pieces fit
 
