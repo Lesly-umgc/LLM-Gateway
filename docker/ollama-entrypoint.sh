@@ -1,7 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Ollama entrypoint for the compose stack.
 # Starts the server, then pulls the model once (skipped if already present).
-set -euo pipefail
+# POSIX sh only: compose runs this under /bin/sh, so no pipefail/bashisms.
+set -eu
 
 MODEL="${OLLAMA_MODEL:-llama3.2:3b}"
 
