@@ -78,47 +78,92 @@ script exits non-zero if any scenario misbehaves.
 - `gateway/` — FastAPI app, API-key auth, per-key rate limiting, JSONL audit
   log, `/admin/metrics`.
 - `rails/` — NeMo Guardrails config (`config.yml` + `rails.co`) plus the
-  actual rail pipeline: a deterministic regex prefilter for known
-  injection/jailbreak patterns (fast, no LLM), an LLM judge for ambiguous
-  cases, and PII redaction on the way out.
-- `monitors/` — RAGAS-style faithfulness: split the answer into claims,
-  check each against the grounding context, score = supported / total.
+  actual rail pipeline, now running on the **real NeMo `LLMRails` runtime**
+  (`rails/nemo_runtime.py`): a deterministic regex prefilter for known
+  injection/jailbreak patterns (fast, no LLM) in front, NeMo's self-check
+  input rail (LLM judge) for ambiguous cases, and PII redaction on the way
+  out.
+- `monitors/` — faithfulness via the **real `ragas` package**
+  (`ragas.metrics.faithfulness`), judged by `llama3.1:8b` through Ollama.
   Sampled (~20% of requests) on a background thread so it never blocks
   responses. If the judge LLM is down it falls back to a deterministic
   heuristic and says so in the result.
-- `optimizer/` — exact + semantic (MiniLM) cache with TTL, prompt
+- `optimizer/` — tiered model router (small vs large), prefix cache for
+  repeated static prompt prefixes, exact + semantic cache with TTL, prompt
   compression, tiktoken accounting. Redis-backed when `LNM_REDIS_URL` is
   set (that's what compose uses), in-process otherwise.
 - `backends/` — `ollama` (default, everything measured runs on it),
   `gemini` (free-tier fallback), `vllm` (GPU production path).
-- `evals/` — `run_benchmark.py`: 30 injection attacks, 12 benign
-  false-positive checks, 20 grounded Q&A, cache/token tests. Writes
-  `results.json` — the only source of numbers in this README.
+- `evals/` — benchmark harnesses: `run_benchmark.py` (original 30-attack /
+  12-benign / 20-Q&A suite, `results.json`); `run_cost_eval.py` + `evals/COST_EVAL.md`
+  (cost-lever methodology); `ollama_cost_eval_chunked.py` (the 100-request
+  Colab cost eval, `cost_results_llama_ollama.json`);
+  `eval_faithfulness.py` (real-ragas eval, `faithfulness_ragas.json`).
 - `serving/` — vLLM + FP8 (INT8-class) serving recipe for a real GPU deploy.
 
 More detail: `docs/ARCHITECTURE.md`.
 
 ## Measured results
 
-From `evals/results.json` (run 2026-09-30, backend=ollama, model=llama3.2:3b,
-judge=ollama, ~31 min wall time). Reproduce with `python evals/run_benchmark.py`.
-(Model note: this sandbox's network blocked Ollama's model registry, so the
-llama3.2:3b weights were fetched as a Q4_K_M GGUF from HuggingFace and
-imported locally — same base model and quant level as the registry build.)
+Every number below comes from a real run against real local models. The
+old `evals/results.json` (24/30 injection, 0.654 RAGAS-style faithfulness,
+2.2% tokens) is superseded by the three workstream evals.
 
-- **Injection defense:** 24/30 attacks blocked (80.0%); 6/30 were not
-  blocked — a real gap I did not hide or tune away.
-- **False positives:** 0/12 benign prompts blocked (0.0%).
-- **Faithfulness (RAGAS-style):** n=20 grounded Q&A, mean score 0.654,
-  min 0.000, 9/20 flagged below the 0.70 threshold (45.0% flag rate).
-- **Token optimization:** 171 of 7,822 tokens saved (2.2%) — 10/10 exact
-  cache hits, 0/4 semantic cache hits (the paraphrases fell below the 0.80
-  MiniLM similarity threshold), plus prompt compression. Estimated
-  $0.000257 saved at the documented blended rate — indicative, not a bill.
+### Injection defense — 46/50 blocked (92.0%)
 
-Honest read: the 33% cost-reduction target from the project aim is **not**
-met by these numbers. 2.2% is the measured saving on this workload; the
-33% stays a design target until a production workload proves otherwise.
+Run 2026-09-30 with the real NeMo `LLMRails` in the request path
+(`rails/nemo_runtime.py`), backend=ollama. 50 fixed adversarial prompts
+(the original 30 plus 20 new jailbreak styles), 12 benign prompts. The
+prompt set was not tuned after seeing results.
+
+Layered defense, measured per layer:
+
+| layer | blocked | rate |
+|---|---|---|
+| regex prefilter alone | 23/50 | 46.0% |
+| NeMo self-check rail alone | 41/50 | 82.0% |
+| **combined** | **46/50** | **92.0%** |
+
+- Original 30 attacks: 29/30 (96.7%). New 20: 17/20 (85.0%).
+- Benign false positives: 0/12.
+- Remaining misses, stated plainly: emotional-manipulation framing,
+  fictional-world framing, novel/screenplay framing, ROT13-encoded
+  instructions.
+- Cost of the stronger layer: the NeMo judge path is ~2.1x slower than
+  prefilter-only.
+
+### Faithfulness — real `ragas`, mean 0.285
+
+Run 2026-09-30 with the actual `ragas` package
+(`ragas.metrics.faithfulness`), judge=`llama3.1:8b` via Ollama, n=20
+grounded Q&A samples (`evals/faithfulness_ragas.json`).
+
+- Mean faithfulness 0.285, min 0.000 — 20/20 samples below the 0.70 flag
+  threshold.
+- Honest read: this is not a win, it's a baseline. The 8B judge found
+  most sampled answers unsupported by their grounding context. The value
+  here is that the metric is real and wired into the request path — the
+  answers (and the judge's harshness) are what need work.
+
+### Cost — 7.81% measured savings
+
+Run 2026-09-30/10-01 on Colab (Ollama, `llama3.2:3b` + `llama3.1:8b`),
+n=100 requests in 6 chunks with Ollama restarts between chunks (the T4
+runner hung after ~40 sequential 8B calls). Notebook: "LNM Gateway - Llama
+Cost Eval (Ollama)". Artifact: `evals/cost_results_llama_ollama.json`.
+
+- Baseline: 100/100 requests on 8B → $0.002003.
+- Gateway: 100/100 tier-routed (3B for simple, 8B for complex) with the
+  repeated system prompt billed at the 50%-off cached-prefix rate →
+  $0.001846.
+- Saved $0.000156 → **7.81%**.
+- Dollars are measured token counts × a documented public price book
+  (3B: $0.10/1M in+out; 8B: $0.20/1M in+out; cached prefix input 50%
+  off). Ollama itself charges nothing — the dollars proxy "what this
+  traffic would cost on a small/frontier model pair".
+- Honest read: the 33% cost-reduction target from the project aim is
+  **not** met. 7.81% is the measured number on this workload; the 33%
+  stays a design target until a production workload proves otherwise.
 
 ## What was NOT run or measured here
 
@@ -126,9 +171,12 @@ met by these numbers. 2.2% is the measured saving on this workload; the
   a mock OpenAI-compatible server, and `serving/vllm_int8_example.yaml`
   documents the deploy recipe — but there is no GPU in this environment,
   so no throughput, latency, or quality numbers are claimed for it.
-- **Cost savings in dollars.** `est_cost_saved_usd` in metrics is measured
-  tokens × a documented blended per-token rate — indicative, not a bill.
+  (Ollama serves 4-bit quants, not INT8 — INT8 refers to the vLLM config
+  only.)
 - **The 33% figure** in the project aim is a design target, not a result.
+- **Semantic-cache savings at scale.** A 90-request paraphrase stress test
+  exists (`evals/ollama_cost_eval_semantic.py`) but the Colab CPU run was
+  parked after repeated model-server instability — no result is claimed.
 
 ## Config
 
