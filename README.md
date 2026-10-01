@@ -21,8 +21,8 @@ This is the easiest way. It starts the gateway, Redis (shared semantic
 cache), and Ollama (local model server) together:
 
 ```bash
-git clone https://github.com/Lesly-umgc/LLM-Gateway.git
-cd LLM-Gateway
+git clone https://github.com/Manthan-hub/LLM-Security-Gateway-and-Governance-Engine.git
+cd LLM-Security-Gateway-and-Governance-Engine
 docker compose up --build
 ```
 
