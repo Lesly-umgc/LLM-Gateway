@@ -1,4 +1,4 @@
-# LNM Gateway
+# LLM Security Gateway and Governance Engine
 
 I built this as a portfolio project: a centralized security gateway that sits
 in front of any LLM and enforces prompt-injection defense, PII redaction,
