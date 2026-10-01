@@ -83,6 +83,12 @@ Exact model wording can vary slightly run to run (sampling), but the
 verdicts — blocked / redacted / cached / flagged — are deterministic. The
 script exits non-zero if any scenario misbehaves.
 
+## Diagrams
+
+![Technology stack](docs/tech-stack.png)
+
+![Request flow](docs/request-flow.png)
+
 ## Talk to it yourself
 
 The gateway is a live OpenAI-compatible API; the demo is just scripted
